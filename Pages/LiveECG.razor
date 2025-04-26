@@ -1,0 +1,141 @@
+﻿@page "/liveEcg"
+@inject IJSRuntime JSRuntime
+@inject NavigationManager Navigation
+@inject EcgFileManager FileManager
+@using LiveEcgChart.Services
+
+
+<div id="liveEcgWrapper" class="@currentTheme">
+
+    <div id="liveThemeButtons">
+        <button class="btn" id="lightThemeButton" @onclick="@(() => SetTheme("light"))">Light Theme</button>
+        <button class="btn" id="darkThemeButton" @onclick="@(() => SetTheme("dark"))">Dark Theme</button>
+        <button class="btn" id="blueThemeButton" @onclick="@(() => SetTheme("blue"))">Blue Theme</button>
+    </div>
+
+    <div class="fileSelector">
+        <label for="fileDropdown" class="fs-6">Select File:</label>
+        <select id="fileDropdown" @onchange="OnFileSelected" class="form-select" value="@currentFileIndex">
+            @foreach (var file in FileManager.EcgFiles)
+            {
+                <option value="@FileManager.EcgFiles.IndexOf(file)">
+                    @Path.GetFileNameWithoutExtension(file)
+                </option>
+            }
+        </select>
+    </div>
+
+    <div id="patientName" class="fs-5 mt-4">
+        <span>Patient:</span> @(string.IsNullOrEmpty(FileManager.CurrentFileName) ? "No File Selected" : FileManager.CurrentFileName)
+    </div>
+
+    <div id="liveEcgChartDiv">
+        <svg id="@ComponentId" class="py-4" width="2070" height="555" viewBox="0 0 2070 555"
+             preserveAspectRatio="xMinYMin slice" shape-rendering="geometricPrecision">
+        </svg>
+    </div>
+
+    <div id="streamControls" class="">
+        <button class="btn lightGrayBtn" id="prevButton" @onclick="PreviousFile" disabled="@(currentFileIndex == 0)">Previous File</button>
+        <button class="btn lightGrayBtn" id="startButton" @onclick="StartStreaming" disabled="@(isStreaming)">Start Streaming</button>
+        <button class="btn lightGrayBtn" id="stopButton" @onclick="StopStreaming" disabled="@(isStreaming == false)">Stop Streaming</button>
+        <button class="btn lightGrayBtn" id="nextButton" @onclick="NextFile" disabled="@(currentFileIndex == FileManager.EcgFiles.Count - 1)">Next File</button>
+    </div>
+
+</div>
+
+
+@code {
+    private string ComponentId = "liveChartSvg";
+    private int currentFileIndex
+    {
+        get => FileManager.CurrentFileIndex;
+        set => FileManager.SetCurrentFileIndex(value);
+    }
+    private string currentTheme = "light-theme";
+    public string baseUri = "";
+    private bool isStreaming = false;
+
+    protected override Task OnInitializedAsync()
+    {
+        Navigation.LocationChanged += HandleLocationChanged;
+        return Task.CompletedTask;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            baseUri = Navigation.BaseUri;
+
+            if (string.IsNullOrEmpty(baseUri))
+            {
+                Console.WriteLine("Base URI is undefined.");
+                return;
+            }
+
+            await JSRuntime.InvokeVoidAsync("drawGridLive", ComponentId);
+            await JSRuntime.InvokeVoidAsync("ecgChart.init", ComponentId, baseUri, currentFileIndex);
+        }
+    }
+
+    private async Task StartStreaming()
+    {
+        await JSRuntime.InvokeVoidAsync("ecgChart.startStreaming", ComponentId);
+        isStreaming = true;
+        StateHasChanged();
+    }
+
+    private async Task StopStreaming()
+    {
+        await JSRuntime.InvokeVoidAsync("ecgChart.stopStreaming", ComponentId);
+        isStreaming = false;
+        StateHasChanged();
+    }
+
+    private async Task NextFile()
+    {
+        await StopStreaming();
+        FileManager.NextFile();
+        currentFileIndex = FileManager.CurrentFileIndex;
+        await JSRuntime.InvokeVoidAsync("ecgChart.updateFile", ComponentId, currentFileIndex);
+        StateHasChanged(); 
+    }
+
+    private async Task PreviousFile()
+    {
+        await StopStreaming();
+        FileManager.PreviousFile();
+        currentFileIndex = FileManager.CurrentFileIndex;
+        await JSRuntime.InvokeVoidAsync("ecgChart.updateFile", ComponentId, currentFileIndex);
+        StateHasChanged();
+    }
+
+    private async Task OnFileSelected(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var newIndex) && newIndex != currentFileIndex)
+        {
+            FileManager.SetCurrentFileIndex(newIndex);
+            await JSRuntime.InvokeVoidAsync("ecgChart.updateFile", ComponentId, currentFileIndex);
+            StateHasChanged();
+        }
+    }
+
+    public void SetTheme(string themeName)
+    {
+        currentTheme = themeName + "-theme";
+        StateHasChanged();
+    }
+
+    private async void HandleLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        await StopStreaming();
+        await JSRuntime.InvokeVoidAsync("ecgChart.cleanupChart", ComponentId);
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= HandleLocationChanged;
+    }
+}

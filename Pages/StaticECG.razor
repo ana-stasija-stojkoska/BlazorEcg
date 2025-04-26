@@ -1,0 +1,214 @@
+﻿@page "/staticEcg"
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+@inject EcgFileManager EcgFileManager
+<!--inherits LayoutComponentBase-->
+@using LiveEcgChart.Services
+@using System.Text.Json
+@using System.Text;
+
+
+<div id="staticEcgWrapper" class="@currentTheme">
+    <div id="staticThemeButtons">
+        <button class="btn fs-6" id="lightThemeButton" @onclick="@(() => SetTheme("light"))">Light Theme</button>
+        <button class="btn fs-6" id="darkThemeButton" @onclick="@(() => SetTheme("dark"))">Dark Theme</button>
+        <button class="btn fs-6" id="blueThemeButton" @onclick="@(() => SetTheme("blue"))">Blue Theme</button>
+    </div>
+
+    <div class="fileSelector">
+        <label for="fileSelect" class="fs-6">Select file:</label>
+        <select id="fileSelect" @onchange="OnFileChange" class="form-select">
+            @foreach (var file in EcgFileManager.EcgFiles)
+            {
+                <option value="@file" selected="@(file == EcgFileManager.CurrentFileName ? "selected" : null)">
+                    @Path.GetFileNameWithoutExtension(file)
+                </option>
+            }
+        </select>
+    </div>
+
+    <div id="patientName" class="fs-5 mt-4">
+        <span>Patient:</span> @EcgFileManager.CurrentFileName
+    </div>
+
+    <div id="staticEcgMetrics" class="fs-6 my-4">
+        <div>
+            <span class="font-weight-bold">Baseline:</span> @(Math.Round(baselineValue, 2))
+        </div>
+        <div>
+            <span class="font-weight-bold">Min value:</span> @minValue
+            <span class="text-muted">
+                (@($"{Math.Round((minValue - baselineValue) / 200.0, 2):0.00}") mV from baseline)
+            </span>
+        </div>
+        <div>
+            <span class="font-weight-bold">Max value:</span> @maxValue
+            <span class="text-muted">
+                (@($"{Math.Round((maxValue - baselineValue) / 200.0, 2):0.00}") mV from baseline)
+            </span>
+        </div>
+    </div>
+
+    <div id="staticEcgChartDiv">
+        @if (ecgValueSegments != null)
+        {
+            @for (var i = 0; i < ecgValueSegments.Count; i++)
+            {
+                <div id="chart-div-@i">
+                    <div class="ecg-chart-container py-1">
+                        <svg class="chart-svg" id="chart-segment-@i"></svg>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+
+    <div class="mt-4">
+        <button class="btn fs-6 lightGrayBtn" @onclick="LoadPreviousFile" disabled="@(!EcgFileManager.HasPreviousFile)">Previous File</button>
+        <button class="btn fs-6 lightGrayBtn" @onclick="LoadNextFile" disabled="@(!EcgFileManager.HasNextFile)">Next File</button>
+    </div>
+</div>
+
+@code {
+    public List<int> ecgValues = new();
+    public List<(List<int> EcgSegment, DateTime SegmentStartTime)> ecgValueSegments = new();
+
+    public double segmentLength = 7.5;
+    public int samplesPerSecond = 128;
+    public int dataPointsPerSegment;
+    public int segmentCount;
+    public int middleSegmentIndex;
+
+    public double baselineValue = 512;
+    public double minValue;
+    public double maxValue;
+
+    public string currentTheme = "light-theme"; // Default theme
+
+    protected override void OnInitialized()
+    {
+        if (EcgFileManager.EcgFiles.Any())
+        {
+            LoadFileData(EcgFileManager.CurrentFileIndex);
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (ecgValues.Any())
+        {
+            for (int i = 0; i < ecgValueSegments.Count; i++)
+            {
+                var chartId = $"chart-segment-{i}";
+                var isMiddleSegment = i == middleSegmentIndex;
+                var segmentData = ecgValueSegments[i].EcgSegment;
+                var segmentStartTime = ecgValueSegments[i].SegmentStartTime.ToString("HH:mm:ss.f");
+
+                await JSRuntime.InvokeVoidAsync("renderECGSignalStatic",
+                     chartId, segmentLength, isMiddleSegment, segmentStartTime, segmentData,
+                     dataPointsPerSegment, minValue, maxValue, baselineValue);
+            }
+        }
+    }
+
+    public void LoadFileData(int fileIndex)
+    {
+        ecgValues.Clear();
+        ecgValueSegments.Clear();
+
+        var filePath = EcgFileManager.EcgFiles[fileIndex];
+        if (File.Exists(filePath))
+        {
+            EcgFileManager.SetCurrentFileIndex(fileIndex);
+            ecgValues = LoadECGValues(filePath);
+            minValue = ecgValues.Min();
+            maxValue = ecgValues.Max();
+        }
+
+        if (ecgValues.Any())
+        {
+            DateTime baseTime = DateTime.Now;
+            int totalDataPoints = ecgValues.Count;
+
+            dataPointsPerSegment = (int)Math.Round(segmentLength * samplesPerSecond);
+            segmentCount = (int)Math.Ceiling((double)totalDataPoints / dataPointsPerSegment);
+            middleSegmentIndex = segmentCount / 2;
+
+            for (int i = 0; i < segmentCount; i++)
+            {
+                int start = i * dataPointsPerSegment;
+                int end = Math.Min(start + dataPointsPerSegment, totalDataPoints);
+
+                var segmentDataPoints = ecgValues.Skip(start).Take(end - start).ToList();
+                DateTime segmentStartTime = baseTime.AddSeconds((i - middleSegmentIndex) * segmentLength);
+
+                ecgValueSegments.Add((segmentDataPoints, segmentStartTime));
+            }
+        }
+        StateHasChanged();
+    }
+
+    public async Task LoadPreviousFile()
+    {
+        if (EcgFileManager.HasPreviousFile)
+        {
+            await JSRuntime.InvokeVoidAsync("clearAllSvg");
+            EcgFileManager.PreviousFile();
+            LoadFileData(EcgFileManager.CurrentFileIndex);
+        }
+    }
+
+    public async Task LoadNextFile()
+    {
+        if (EcgFileManager.HasNextFile)
+        {
+            await JSRuntime.InvokeVoidAsync("clearAllSvg");
+            EcgFileManager.NextFile();
+            LoadFileData(EcgFileManager.CurrentFileIndex);
+        }
+    }
+
+    private List<int> LoadECGValues(string filePath)
+    {
+        var values = new List<int>();
+        int maxNoValues = 3700;
+
+        try
+        {
+            foreach (var line in File.ReadLines(filePath, Encoding.UTF8))
+            {
+                if (values.Count >= maxNoValues)
+                {
+                    break;
+                }
+                if (int.TryParse(line.Trim(), out int value))
+                {
+                    values.Add(value);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error reading file: {ex.Message}");
+        }
+
+        return values;
+    }
+
+    private void OnFileChange(ChangeEventArgs e)
+    {
+        var selectedFilePath = e.Value?.ToString();
+        int selectedIndex = EcgFileManager.EcgFiles.IndexOf(selectedFilePath ?? string.Empty);
+
+        if (selectedIndex >= 0)
+        {
+            LoadFileData(selectedIndex);
+        }
+    }
+
+    public void SetTheme(string themeName)
+    {
+        currentTheme = themeName + "-theme";
+        StateHasChanged();
+    }
+}

@@ -1,0 +1,25 @@
+.page[b-uz2uher0ma] {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    min-height: 300px;
+    border-radius: 10px;
+    background-color: white;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+body .page article[b-uz2uher0ma] {
+    padding: 1.5rem 1rem 2.5rem 1rem !important;
+    flex-grow: 1;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+main[b-uz2uher0ma] {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}

@@ -1,0 +1,39 @@
+﻿.index-container {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+.info-container, .welcome-container {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    font-style: italic;
+}
+
+.text1 {
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: clamp(16px, 2vw, 32px);
+    color: grey;
+}
+
+.text2 {
+    font-size: clamp(24px, 3.5vw, 48px);
+    color: #1c77ba;
+}
+
+.text3 {
+    font-size: clamp(14px, 1.7vw, 28px);
+    color: black;
+}
+
+.text2, .text3 {
+    font-family: Oswald, Arial, sans-serif;
+}
+
+.text1, .text2, .text3 {
+    line-height: 1;
+}
